@@ -1049,15 +1049,13 @@ angular.module('ct.ui.router.extras').provider('$futureState',
         return $injector.invoke(factory, factory, { futureState: futureState });
       }
 
+      var otherwiseFunc = [ '$log', '$location',
+        function otherwiseFunc($log, $location) {
+          $log.debug("Unable to map " + $location.path());
+        }];
+
       function futureState_otherwise($injector, $location) {
         var resyncing = false;
-        var $log = $injector.get("$log");
-
-        var otherwiseFunc = [ '$state',
-          function otherwiseFunc($state) {
-            $log.debug("Unable to map " + $location.path());
-            $location.url("/");
-          }];
 
         var lazyLoadMissingState =
           ['$rootScope', '$urlRouter', '$state',
@@ -1083,7 +1081,7 @@ angular.module('ct.ui.router.extras').provider('$futureState',
               // Config loaded.  Asynchronously lazy-load state definition from URL fragment, if mapped.
               lazyLoadState($injector, futureState).then(function lazyLoadedStateCallback(state) {
                 // TODO: Should have a specific resolve value that says 'dont register a state because I already did'
-                if (state && !$state.get(state))
+                if (state && (!$state.get(state) || (state.name && !$state.get(state.name))))
                   $stateProvider.state(state);
                 resyncing = true;
                 $urlRouter.sync();
@@ -1101,6 +1099,16 @@ angular.module('ct.ui.router.extras').provider('$futureState',
       }
 
       $urlRouterProvider.otherwise(futureState_otherwise);
+
+      $urlRouterProvider.otherwise = function(rule) {
+        if (angular.isString(rule)) {
+          var redirect = rule;
+          rule = function () { return redirect; };
+        }
+        else if (!angular.isFunction(rule)) throw new Error("'rule' must be a function");
+        otherwiseFunc = rule;
+        return $urlRouterProvider;
+      }; 
 
       var serviceObject = {
         getResolvePromise: function () {
@@ -1214,8 +1222,8 @@ angular.module('ct.ui.router.extras').service("$previousState",
           var to = $previousState.get(memoName);
           return $state.go(to.state, to.params, options);
         },
-        memo: function (memoName) {
-          memos[memoName] = previous;
+        memo: function (memoName, defaultStateName, defaultStateParams) {
+          memos[memoName] = previous || { state: $state.get(defaultStateName), params: defaultStateParams };
         },
         forget: function (memoName) {
           delete memos[memoName];
